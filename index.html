@@ -1,0 +1,219 @@
+<?php
+// Config Cloudflare API per domain
+$cloudflareConfigs = [
+    'example.com' => [
+        'zoneId' => 'ZONE_ID_1',
+        'apiToken' => 'API_TOKEN_1',
+    ],
+    'mydomain.net' => [
+        'zoneId' => 'ZONE_ID_2',
+        'apiToken' => 'API_TOKEN_2',
+    ],
+    'vannhost.id' => [
+        'zoneId' => 'ZONE_ID_3',
+        'apiToken' => 'API_TOKEN_3',
+    ],
+];
+
+$responseMessages = [];
+$errorMessages = [];
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $subdomainsInput = strtolower(trim($_POST['subdomains'] ?? ''));
+    $domain = $_POST['domain'] ?? '';
+
+    if (!$subdomainsInput || !$domain) {
+        $errorMessages[] = 'Subdomain dan domain wajib diisi.';
+    } elseif (!isset($cloudflareConfigs[$domain])) {
+        $errorMessages[] = 'Domain tidak valid.';
+    } else {
+        $zoneId = $cloudflareConfigs[$domain]['zoneId'];
+        $apiToken = $cloudflareConfigs[$domain]['apiToken'];
+
+        // Pisahkan input subdomain
+        $subs = preg_split('/[\s,]+/', $subdomainsInput, -1, PREG_SPLIT_NO_EMPTY);
+
+        foreach ($subs as $subdomain) {
+            if (!preg_match('/^[a-z0-9\-]{3,15}$/', $subdomain)) {
+                $errorMessages[] = "Subdomain \"$subdomain\" tidak valid (3-15 karakter, huruf kecil, angka, strip).";
+                continue;
+            }
+
+            $fullDomain = "$subdomain.$domain";
+
+            $ch = curl_init();
+            curl_setopt_array($ch, [
+                CURLOPT_URL => "https://api.cloudflare.com/client/v4/zones/$zoneId/dns_records",
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_CUSTOMREQUEST => "POST",
+                CURLOPT_POSTFIELDS => json_encode([
+                    "type" => "A",
+                    "name" => $fullDomain,
+                    "content" => "123.123.123.123", // Ganti IP server kamu
+                    "ttl" => 120,
+                    "proxied" => false
+                ]),
+                CURLOPT_HTTPHEADER => [
+                    "Authorization: Bearer $apiToken",
+                    "Content-Type: application/json"
+                ],
+            ]);
+
+            $apiResponse = curl_exec($ch);
+            $curlError = curl_error($ch);
+            curl_close($ch);
+
+            if ($curlError) {
+                $errorMessages[] = "cURL Error pada subdomain \"$fullDomain\": $curlError";
+                continue;
+            }
+
+            $resData = json_decode($apiResponse, true);
+            if ($resData && $resData['success'] === true) {
+                $responseMessages[] = "Subdomain <strong>$fullDomain</strong> berhasil dibuat!";
+            } else {
+                $errMsg = $resData['errors'][0]['message'] ?? 'Gagal membuat subdomain.';
+                $errorMessages[] = "Error pada subdomain \"$fullDomain\": $errMsg";
+            }
+        }
+    }
+}
+?>
+
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Create Multiple Subdomains</title>
+  <style>
+    /* Style sama seperti sebelumnya, kamu bisa copy paste */
+    @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;600&display=swap');
+    * { box-sizing: border-box; }
+    body {
+      font-family: 'Poppins', sans-serif;
+      background: linear-gradient(135deg, #6a11cb 0%, #2575fc 100%);
+      margin: 0; min-height: 100vh;
+      display: flex; justify-content: center; align-items: center;
+      color: #fff; padding: 20px;
+    }
+    .container {
+      background: rgba(255,255,255,0.1);
+      padding: 40px 30px;
+      border-radius: 15px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.25);
+      width: 400px;
+      text-align: center;
+      backdrop-filter: blur(10px);
+    }
+    h1 {
+      margin-bottom: 24px;
+      font-weight: 600;
+      letter-spacing: 1.5px;
+    }
+    label {
+      display: block;
+      text-align: left;
+      margin-bottom: 8px;
+      font-weight: 500;
+      font-size: 0.9rem;
+    }
+    textarea, select {
+      width: 100%;
+      padding: 12px 15px;
+      margin-bottom: 20px;
+      border-radius: 8px;
+      border: none;
+      font-size: 1rem;
+      outline: none;
+      transition: box-shadow 0.3s ease;
+      background: rgba(255,255,255,0.15);
+      color: #fff;
+      resize: vertical;
+      min-height: 120px;
+    }
+    textarea:focus, select:focus {
+      box-shadow: 0 0 8px 3px rgba(255,255,255,0.6);
+      background: rgba(255,255,255,0.3);
+      color: #000;
+    }
+    button {
+      width: 100%;
+      padding: 14px;
+      background: linear-gradient(45deg, #ff5f6d, #ffc371);
+      border: none;
+      border-radius: 10px;
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: #fff;
+      cursor: pointer;
+      transition: background 0.3s ease;
+      box-shadow: 0 6px 15px rgba(255,95,109,0.6);
+    }
+    button:hover {
+      background: linear-gradient(45deg, #ffc371, #ff5f6d);
+      box-shadow: 0 8px 20px rgba(255,195,113,0.8);
+    }
+    .message {
+      margin-top: 20px;
+      padding: 15px;
+      border-radius: 10px;
+      font-weight: 600;
+      font-size: 1rem;
+      background: rgba(255,255,255,0.15);
+      word-wrap: break-word;
+      user-select: text;
+      max-height: 200px;
+      overflow-y: auto;
+      text-align: left;
+    }
+    .error {
+      background: rgba(255, 80, 80, 0.7);
+      color: #fff;
+    }
+    .success {
+      background: rgba(80, 255, 130, 0.7);
+      color: #000;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Create Multiple Subdomains</h1>
+    <form method="POST" id="subdomainForm">
+      <label for="subdomains">Nama Subdomain (pisah dengan koma, spasi, atau baris baru)</label>
+      <textarea
+        id="subdomains"
+        name="subdomains"
+        placeholder="contoh: api, test, blog, dev123"
+        required
+      ><?php echo htmlspecialchars($_POST['subdomains'] ?? '') ?></textarea>
+
+      <label for="domain">Pilih Domain Utama</label>
+      <select id="domain" name="domain" required>
+        <option value="" disabled <?php if(empty($_POST['domain'])) echo 'selected' ?>>Pilih domain</option>
+        <?php
+        foreach ($cloudflareConfigs as $dom => $cfg) {
+            $selected = ($_POST['domain'] ?? '') === $dom ? 'selected' : '';
+            echo "<option value=\"$dom\" $selected>$dom</option>";
+        }
+        ?>
+      </select>
+
+      <button type="submit">Create Subdomains</button>
+    </form>
+
+    <?php if (!empty($responseMessages)): ?>
+      <div class="message success">
+        <?php echo implode('<br>', $responseMessages) ?>
+      </div>
+    <?php endif; ?>
+
+    <?php if (!empty($errorMessages)): ?>
+      <div class="message error">
+        <?php echo implode('<br>', $errorMessages) ?>
+      </div>
+    <?php endif; ?>
+  </div>
+</body>
+</html>
